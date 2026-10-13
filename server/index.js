@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import fs from "node:fs";
 import express from "express";
+import cors from "cors";
 import multer from "multer";
 import { parseWorkbook, processOrder, getConfig } from "./refund.js";
 
@@ -52,8 +53,33 @@ async function runJob(job, orders, opts, live) {
 }
 
 const app = express();
+
+// --- CORS: allow the deployed Netlify frontend to call this API ---
+const allowedOrigins = (
+  process.env.CLIENT_ORIGIN || "http://localhost:5173"
+)
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin(origin, callback) {
+      // Allow requests with no origin (curl, server-to-server, health checks)
+      if (!origin || allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+      return callback(new Error(`Origin not allowed by CORS: ${origin}`));
+    },
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
 app.use(express.json());
+
+app.get("/api/health", (req, res) => res.json({ ok: true }));
 
 app.get("/api/config", (req, res) => res.json(getConfig()));
 
@@ -100,18 +126,18 @@ app.get("/api/job/:id", (req, res) => {
   res.json(job);
 });
 
-// Serve the built React client if present.
+// Serve the built React client if present (harmless if deployed separately on Netlify).
 if (fs.existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST));
   app.get("*", (req, res) => res.sendFile(path.join(CLIENT_DIST, "index.html")));
 } else {
   app.get("/", (req, res) =>
-    res.status(200).send("Client not built yet. Run `npm run build`, then reload. (API is live.)"));
+    res.status(200).send("API is live. (No local client build found — expected for separate Netlify deployment.)"));
 }
 
 http.createServer(app).listen(PORT, () => {
   console.log(`Refund console on http://localhost:${PORT}`);
   const cfg = getConfig();
   if (!cfg.hasToken) console.log("WARNING: SHOPIFY_ADMIN_TOKEN not set.");
-  if (!fs.existsSync(CLIENT_DIST)) console.log("Client not built. Run `npm run build`.");
+  if (!fs.existsSync(CLIENT_DIST)) console.log("No local client build found (expected for separate Netlify deployment).");
 });
