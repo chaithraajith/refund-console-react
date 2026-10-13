@@ -1,7 +1,23 @@
-// Thin API helpers — all calls are same-origin (or proxied in dev).
+// API helpers — calls go to the Railway backend via VITE_API_BASE_URL.
+const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || "").replace(/\/$/, "");
+
+function apiUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
+async function parseResponse(response) {
+  const data = await response.json().catch(() => ({
+    error: `Server returned HTTP ${response.status}`,
+  }));
+  if (!response.ok && !data.error) {
+    data.error = `Request failed with HTTP ${response.status}`;
+  }
+  return data;
+}
+
 export async function getConfig() {
-  const r = await fetch("/api/config");
-  return r.json();
+  const r = await fetch(apiUrl("/api/config"));
+  return parseResponse(r);
 }
 
 export async function startPreview(file, opts) {
@@ -12,22 +28,22 @@ export async function startPreview(file, opts) {
   fd.append("notify", String(!!opts.notify));
   fd.append("sleepMs", String(opts.sleepMs ?? 300));
   if (opts.limit) fd.append("limit", String(opts.limit));
-  const r = await fetch("/api/preview", { method: "POST", body: fd });
-  return r.json();
+  const r = await fetch(apiUrl("/api/preview"), { method: "POST", body: fd });
+  return parseResponse(r);
 }
 
 export async function startRefund(planId) {
-  const r = await fetch("/api/refund", {
+  const r = await fetch(apiUrl("/api/refund"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ planId, confirm: true }),
   });
-  return r.json();
+  return parseResponse(r);
 }
 
 export async function getJob(jobId) {
-  const r = await fetch(`/api/job/${jobId}`);
-  return r.json();
+  const r = await fetch(apiUrl(`/api/job/${jobId}`));
+  return parseResponse(r);
 }
 
 export function jobToCsv(job) {
